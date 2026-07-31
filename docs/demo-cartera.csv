@@ -1,0 +1,6 @@
+clienteNombre,rfc,email,telefono,folio,monto,fechaEmision,fechaVencimiento,concepto
+Comercial Bajio,CBJ010101AA1,cobranza@bajio.mx,5551112233,F-1001,86400,2026-06-01,2026-07-10,Servicios mensuales
+Ferreteria Norte,FNO020202BB2,pagos@norte.mx,5552223344,F-1002,42900,2026-06-15,2026-07-22,Material industrial
+Grupo Textil MX,GTM030303CC3,admin@textilmx.mx,5553334455,F-1003,31200,2026-06-20,2026-07-26,Insumos textiles
+Distribuidora Sur,DSU040404DD4,cuentas@sur.mx,5554445566,F-1004,155000,2026-05-28,2026-07-05,Pedido mayorista
+Consultoria Delta,CDE050505EE5,finanzas@delta.mx,5555556677,F-1005,18700,2026-07-01,2026-07-30,Servicios profesionales

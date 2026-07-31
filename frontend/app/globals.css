@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: #f6f7f9;
+  color: #17212b;
+}
+
+input, select, textarea, button {
+  font: inherit;
+}
+
+.field {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: white;
+}
+
+.btn-primary {
+  border-radius: 6px;
+  background: #22a06b;
+  color: white;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+.btn-secondary {
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #334155;
+  font-weight: 600;
+  padding: 10px 14px;
+}

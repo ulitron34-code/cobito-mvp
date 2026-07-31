@@ -1,0 +1,32 @@
+{
+  "name": "cobito-backend",
+  "version": "1.0.0",
+  "description": "API REST para cobranza inteligente de PYMEs mexicanas",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "check": "node --check src/server.js",
+    "seed:demo": "node scripts/seed-demo.js",
+    "smoke": "node scripts/smoke-api.js"
+  },
+  "dependencies": {
+    "axios": "^1.4.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "joi": "^17.9.2",
+    "jsonwebtoken": "^9.0.2",
+    "node-cron": "^3.0.2",
+    "nodemailer": "^6.9.3",
+    "pg": "^8.10.0",
+    "pg-promise": "^10.11.1",
+    "stripe": "^12.0.0",
+    "twilio": "^3.83.0",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
