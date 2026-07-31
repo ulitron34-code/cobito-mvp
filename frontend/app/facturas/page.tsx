@@ -6,7 +6,10 @@ import { money, shortDate } from '@/utils/format';
 
 const sampleCsv = `clienteNombre,rfc,email,telefono,folio,monto,fechaEmision,fechaVencimiento,concepto
 Comercial Bajio,CBJ010101AA1,cobranza@bajio.mx,5551112233,F-1001,86400,2026-06-01,2026-07-10,Servicios mensuales
-Ferreteria Norte,FNO020202BB2,pagos@norte.mx,5552223344,F-1002,42900,2026-06-15,2026-07-22,Material industrial`;
+Ferreteria Norte,FNO020202BB2,pagos@norte.mx,5552223344,F-1002,42900,2026-06-15,2026-07-22,Material industrial
+Grupo Textil MX,GTM030303CC3,admin@textilmx.mx,5553334455,F-1003,31200,2026-06-20,2026-07-26,Insumos textiles
+Distribuidora Sur,DSU040404DD4,cuentas@sur.mx,5554445566,F-1004,155000,2026-05-28,2026-07-05,Pedido mayorista
+Consultoria Delta,CDE050505EE5,finanzas@delta.mx,5555556677,F-1005,18700,2026-07-01,2026-07-30,Servicios profesionales`;
 
 export default function FacturasPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -14,6 +17,7 @@ export default function FacturasPage() {
   const [csv, setCsv] = useState(sampleCsv);
   const [form, setForm] = useState({ clienteId: '', folio: '', monto: '', fechaEmision: '', fechaVencimiento: '', concepto: '' });
   const [message, setMessage] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
 
   async function load() {
     const [c, f] = await Promise.all([api<Cliente[]>('/clientes'), api<Factura[]>('/facturas')]);
@@ -33,10 +37,23 @@ export default function FacturasPage() {
   }
 
   async function importCsv() {
-    const rows = parseCsv(csv);
-    const response = await api<{ message: string }>('/facturas/import/excel', { method: 'POST', body: JSON.stringify({ facturas: rows }) });
-    setMessage(response.message);
-    await load();
+    try {
+      setIsImporting(true);
+      const rows = parseCsv(csv);
+      if (!rows.length) throw new Error('El CSV no tiene facturas para importar.');
+      const response = await api<{ message: string }>('/facturas/import/excel', { method: 'POST', body: JSON.stringify({ facturas: rows }) });
+      setMessage(response.message);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo importar la cartera.');
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  function loadDemo() {
+    setCsv(sampleCsv);
+    setMessage('Cartera demo lista. Puedes importarla o editarla antes.');
   }
 
   return (
@@ -61,9 +78,14 @@ export default function FacturasPage() {
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-black">Importar CSV</h2>
-          <p className="mt-1 text-sm text-slate-500">Pega columnas como el ejemplo.</p>
+          <p className="mt-1 text-sm text-slate-500">Pega columnas como el ejemplo o carga la demo.</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button className="btn-secondary" type="button" onClick={loadDemo}>Cargar demo</button>
+            <button className="btn-primary" type="button" onClick={importCsv} disabled={isImporting}>
+              {isImporting ? 'Importando...' : 'Importar cartera'}
+            </button>
+          </div>
           <textarea className="field mt-4 min-h-56 font-mono text-xs" value={csv} onChange={(e) => setCsv(e.target.value)} />
-          <button className="btn-secondary mt-3 w-full" onClick={importCsv}>Importar cartera</button>
           {message ? <p className="mt-3 text-sm font-semibold text-mint">{message}</p> : null}
         </section>
       </aside>
@@ -94,6 +116,7 @@ export default function FacturasPage() {
 
 function parseCsv(raw: string) {
   const [headerLine, ...lines] = raw.trim().split(/\r?\n/);
+  if (!headerLine) return [];
   const headers = headerLine.split(',').map((h) => h.trim());
   return lines.filter(Boolean).map((line) => {
     const values = line.split(',').map((v) => v.trim());
