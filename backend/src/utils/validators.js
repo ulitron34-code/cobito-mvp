@@ -45,7 +45,8 @@ const schemas = {
     })).min(1).required()
   }),
   enviarRecordatorio: Joi.object({
-    canal: Joi.string().valid('WHATSAPP', 'EMAIL', 'SMS', 'LLAMADA').required()
+    canal: Joi.string().valid('WHATSAPP', 'EMAIL', 'SMS', 'LLAMADA').required(),
+    templateId: Joi.string().allow('', null).max(80)
   }),
   promesa: Joi.object({
     fechaPrometida: Joi.date().iso().required(),
@@ -56,6 +57,11 @@ const schemas = {
     monto: Joi.number().min(0).required(),
     canal: Joi.string().allow('', null).max(50),
     referencia: Joi.string().allow('', null).max(255)
+  }),
+  templateMensaje: Joi.object({
+    nombre: Joi.string().min(2).max(120).required(),
+    canal: Joi.string().valid('WHATSAPP', 'EMAIL', 'SMS', 'LLAMADA').required(),
+    contenido: Joi.string().min(10).max(2000).required()
   })
 };
 

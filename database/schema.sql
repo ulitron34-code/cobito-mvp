@@ -102,6 +102,21 @@ CREATE TABLE IF NOT EXISTS logs_comunicacion (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+
+CREATE TABLE IF NOT EXISTS chatbot_mensajes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  cliente_id UUID REFERENCES clientes(id) ON DELETE SET NULL,
+  factura_id UUID REFERENCES facturas(id) ON DELETE SET NULL,
+  canal canal_cobranza NOT NULL DEFAULT 'WHATSAPP',
+  direccion VARCHAR(20) NOT NULL CHECK (direccion IN ('INBOUND', 'OUTBOUND')),
+  telefono VARCHAR(40),
+  mensaje TEXT NOT NULL,
+  intencion VARCHAR(80),
+  respuesta TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_clientes_user ON clientes(user_id);
 CREATE INDEX IF NOT EXISTS idx_clientes_rfc ON clientes(rfc);
@@ -113,3 +128,6 @@ CREATE INDEX IF NOT EXISTS idx_calendario_factura ON calendario_cobranza(factura
 CREATE INDEX IF NOT EXISTS idx_promesas_factura ON promesas_pago(factura_id);
 CREATE INDEX IF NOT EXISTS idx_pagos_factura ON pagos(factura_id);
 CREATE INDEX IF NOT EXISTS idx_logs_factura ON logs_comunicacion(factura_id);
+CREATE INDEX IF NOT EXISTS idx_chatbot_factura ON chatbot_mensajes(factura_id);
+CREATE INDEX IF NOT EXISTS idx_chatbot_cliente ON chatbot_mensajes(cliente_id);
+CREATE INDEX IF NOT EXISTS idx_chatbot_telefono ON chatbot_mensajes(telefono);

@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, Factura } from '@/utils/api';
+import { api, Factura, TemplateMensaje } from '@/utils/api';
 import { daysLate, money, shortDate } from '@/utils/format';
+
+type Canal = 'WHATSAPP' | 'EMAIL' | 'SMS' | 'LLAMADA';
 
 type Calendario = {
   id: string;
@@ -13,7 +15,7 @@ type Calendario = {
   fecha_vencimiento: string;
   tipo_accion: string;
   fecha_programada: string;
-  canal: 'WHATSAPP' | 'EMAIL' | 'SMS' | 'LLAMADA';
+  canal: Canal;
   status: string;
 };
 
@@ -28,23 +30,32 @@ const filters: { label: string; value: Filter }[] = [
   { label: 'Todo', value: 'TODO' }
 ];
 
+const canales: Canal[] = ['WHATSAPP', 'EMAIL', 'SMS', 'LLAMADA'];
+
 export default function CobranzaPage() {
   const [items, setItems] = useState<Calendario[]>([]);
   const [facturas, setFacturas] = useState<Factura[]>([]);
+  const [templates, setTemplates] = useState<TemplateMensaje[]>([]);
   const [selectedFacturaId, setSelectedFacturaId] = useState('');
+  const [selectedCanal, setSelectedCanal] = useState<Canal>('WHATSAPP');
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [preview, setPreview] = useState('');
   const [filter, setFilter] = useState<Filter>('PENDIENTE');
   const [message, setMessage] = useState('');
   const [promesa, setPromesa] = useState({ facturaId: '', fechaPrometida: '', monto: '' });
   const [pago, setPago] = useState({ facturaId: '', monto: '', canal: 'TRANSFERENCIA', referencia: '' });
+  const [newTemplate, setNewTemplate] = useState({ nombre: '', contenido: '' });
 
   async function load() {
-    const [calendar, invoices] = await Promise.all([
+    const [calendar, invoices, loadedTemplates] = await Promise.all([
       api<Calendario[]>('/cobranza/calendario'),
-      api<Factura[]>('/facturas')
+      api<Factura[]>('/facturas'),
+      api<TemplateMensaje[]>('/cobranza/templates')
     ]);
     const abiertas = invoices.filter((f) => f.estado !== 'PAGADA');
     setItems(calendar);
     setFacturas(abiertas);
+    setTemplates(loadedTemplates);
     const firstId = abiertas[0]?.id || '';
     setSelectedFacturaId((current) => current || firstId);
     if (!promesa.facturaId && firstId) setPromesa((prev) => ({ ...prev, facturaId: firstId }));
@@ -54,6 +65,22 @@ export default function CobranzaPage() {
   useEffect(() => { load().catch((err) => setMessage(err instanceof Error ? err.message : 'No se pudo cargar cobranza')); }, []);
 
   const selectedFactura = facturas.find((factura) => factura.id === selectedFacturaId) || facturas[0];
+  const templatesCanal = templates.filter((template) => template.canal === selectedCanal);
+  const activeTemplateId = templatesCanal.some((template) => template.id === selectedTemplateId) ? selectedTemplateId : (templatesCanal[0]?.id || '');
+
+  useEffect(() => {
+    if (!selectedFactura?.id) {
+      setPreview('Carga una cartera para generar mensajes de cobranza.');
+      return;
+    }
+
+    const params = new URLSearchParams({ canal: selectedCanal });
+    if (activeTemplateId) params.set('templateId', activeTemplateId);
+    api<{ mensaje: string }>(`/cobranza/${selectedFactura.id}/mensaje?${params.toString()}`)
+      .then((response) => setPreview(response.mensaje))
+      .catch((err) => setPreview(err instanceof Error ? err.message : 'No se pudo generar mensaje'));
+  }, [selectedFactura?.id, selectedCanal, activeTemplateId]);
+
   const filteredItems = useMemo(() => {
     const today = new Date();
     today.setHours(23, 59, 59, 999);
@@ -69,7 +96,7 @@ export default function CobranzaPage() {
   const resumen = useMemo(() => {
     const pendientes = items.filter((item) => item.status === 'PENDIENTE');
     const hoy = pendientes.filter((item) => new Date(item.fecha_programada) <= new Date());
-    const saldo = facturas.reduce((total, factura) => total + Number(factura.monto || 0) - Number(factura.pagado || 0), 0);
+    const saldo = facturas.reduce((total, factura) => total + Number(factura.saldo ?? factura.monto ?? 0), 0);
     return {
       hoy: hoy.length,
       pendientes: pendientes.length,
@@ -78,28 +105,25 @@ export default function CobranzaPage() {
     };
   }, [facturas, items]);
 
-  function selectFactura(facturaId: string) {
+  function selectFactura(facturaId: string, canal?: Canal) {
     setSelectedFacturaId(facturaId);
+    if (canal) setSelectedCanal(canal);
     setPromesa((prev) => ({ ...prev, facturaId }));
     setPago((prev) => ({ ...prev, facturaId }));
   }
 
-  function buildMessage(factura?: Factura) {
-    if (!factura) return 'Carga una cartera para generar mensajes de cobranza.';
-    const folio = factura.folio || factura.id.slice(0, 8);
-    const vencimiento = shortDate(factura.fecha_vencimiento);
-    return `Hola ${factura.cliente_nombre}, te contacto por la factura ${folio} por ${money(factura.monto)}, vencida el ${vencimiento}. Nos confirmas fecha estimada de pago?`;
-  }
-
   async function copyMessage() {
-    const text = buildMessage(selectedFactura);
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(preview);
     setMessage('Mensaje copiado.');
   }
 
   async function send(item: Calendario) {
-    selectFactura(item.factura_id);
-    const response = await api<{ message: string }>(`/cobranza/${item.factura_id}/enviar`, { method: 'POST', body: JSON.stringify({ canal: item.canal }) });
+    selectFactura(item.factura_id, item.canal);
+    const templateForItem = templates.find((template) => template.id === selectedTemplateId && template.canal === item.canal);
+    const response = await api<{ message: string }>(`/cobranza/${item.factura_id}/enviar`, {
+      method: 'POST',
+      body: JSON.stringify({ canal: item.canal, templateId: templateForItem?.id || null })
+    });
     setMessage(response.message);
     await load();
   }
@@ -118,8 +142,19 @@ export default function CobranzaPage() {
     await load();
   }
 
+  async function saveTemplate() {
+    const created = await api<TemplateMensaje>('/cobranza/templates', {
+      method: 'POST',
+      body: JSON.stringify({ nombre: newTemplate.nombre, canal: selectedCanal, contenido: newTemplate.contenido })
+    });
+    setTemplates((current) => [created, ...current]);
+    setSelectedTemplateId(created.id);
+    setNewTemplate({ nombre: '', contenido: '' });
+    setMessage('Plantilla guardada.');
+  }
+
   return (
-    <main className="mx-auto grid max-w-7xl gap-5 px-4 py-6 xl:grid-cols-[1fr_380px]">
+    <main className="mx-auto grid max-w-7xl gap-5 px-4 py-6 xl:grid-cols-[1fr_400px]">
       <section className="space-y-5">
         <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -162,7 +197,7 @@ export default function CobranzaPage() {
                   <tr key={item.id} className={item.factura_id === selectedFactura?.id ? 'border-b bg-mint/5 last:border-0' : 'border-b last:border-0'}>
                     <td className="py-3">{shortDate(item.fecha_programada)}</td>
                     <td>
-                      <button className="text-left font-semibold text-ink" type="button" onClick={() => selectFactura(item.factura_id)}>
+                      <button className="text-left font-semibold text-ink" type="button" onClick={() => selectFactura(item.factura_id, item.canal)}>
                         {item.cliente_nombre}
                         <span className="block text-xs font-normal text-slate-500">{item.folio || item.factura_id.slice(0, 8)}</span>
                       </button>
@@ -186,18 +221,32 @@ export default function CobranzaPage() {
       </section>
 
       <aside className="space-y-5">
-        <Panel title="Factura activa">
+        <Panel title="Mensaje de cobranza">
           {selectedFactura ? (
             <>
               <div className="rounded border border-slate-200 p-3 text-sm">
                 <p className="font-black">{selectedFactura.cliente_nombre}</p>
                 <p className="mt-1 text-slate-500">{selectedFactura.folio || selectedFactura.id.slice(0, 8)} - vence {shortDate(selectedFactura.fecha_vencimiento)}</p>
-                <p className="mt-3 text-2xl font-black text-coral">{money(selectedFactura.monto)}</p>
+                <p className="mt-3 text-2xl font-black text-coral">{money(selectedFactura.saldo ?? selectedFactura.monto)}</p>
               </div>
-              <textarea className="field min-h-36 text-sm" value={buildMessage(selectedFactura)} readOnly />
+              <div className="grid grid-cols-2 gap-2">
+                <select className="field" value={selectedCanal} onChange={(event) => setSelectedCanal(event.target.value as Canal)}>
+                  {canales.map((canal) => <option key={canal}>{canal}</option>)}
+                </select>
+                <select className="field" value={activeTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
+                  {templatesCanal.map((template) => <option key={template.id} value={template.id}>{template.nombre}</option>)}
+                </select>
+              </div>
+              <textarea className="field min-h-36 text-sm" value={preview} readOnly />
               <button className="btn-primary w-full" type="button" onClick={copyMessage}>Copiar mensaje</button>
             </>
           ) : <p className="text-sm text-slate-500">Carga facturas para activar acciones de cobranza.</p>}
+        </Panel>
+
+        <Panel title="Nueva plantilla">
+          <input className="field" placeholder="Nombre de plantilla" value={newTemplate.nombre} onChange={(event) => setNewTemplate({ ...newTemplate, nombre: event.target.value })} />
+          <textarea className="field min-h-28 text-sm" placeholder="Usa {{cliente}}, {{folio}}, {{monto}}, {{vencimiento}}, {{diasVencida}}" value={newTemplate.contenido} onChange={(event) => setNewTemplate({ ...newTemplate, contenido: event.target.value })} />
+          <button className="btn-secondary w-full" type="button" onClick={saveTemplate} disabled={!newTemplate.nombre || newTemplate.contenido.length < 10}>Guardar plantilla {selectedCanal}</button>
         </Panel>
 
         <Panel title="Registrar promesa">
@@ -211,7 +260,7 @@ export default function CobranzaPage() {
 
         <Panel title="Registrar pago">
           <select className="field" value={pago.facturaId} onChange={(e) => selectFactura(e.target.value)}>
-            {facturas.map((f) => <option key={f.id} value={f.id}>{f.cliente_nombre} - {money(f.monto)}</option>)}
+            {facturas.map((f) => <option key={f.id} value={f.id}>{f.cliente_nombre} - {money(f.saldo ?? f.monto)}</option>)}
           </select>
           <input className="field" type="number" placeholder="Monto pagado" value={pago.monto} onChange={(e) => setPago({ ...pago, monto: e.target.value })} />
           <select className="field" value={pago.canal} onChange={(e) => setPago({ ...pago, canal: e.target.value })}>

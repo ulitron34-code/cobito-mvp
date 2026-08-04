@@ -16,6 +16,50 @@ export type Cliente = {
   saldo_pendiente?: number;
 };
 
+export type Pago = {
+  id: string;
+  factura_id: string;
+  folio?: string;
+  monto: number;
+  fecha_pago: string;
+  canal?: string;
+  referencia?: string;
+};
+
+export type Promesa = {
+  id: string;
+  factura_id: string;
+  folio?: string;
+  fecha_prometida: string;
+  monto: number;
+  status: string;
+  notas?: string;
+};
+
+export type LogComunicacion = {
+  id: string;
+  factura_id: string;
+  folio?: string;
+  tipo: string;
+  destinatario?: string;
+  mensaje?: string;
+  resultado?: Record<string, unknown>;
+  created_at: string;
+};
+
+
+export type ChatbotMensaje = {
+  id: string;
+  factura_id?: string;
+  folio?: string;
+  canal: 'WHATSAPP' | 'EMAIL' | 'SMS' | 'LLAMADA';
+  direccion: 'INBOUND' | 'OUTBOUND';
+  telefono?: string;
+  mensaje: string;
+  intencion?: string;
+  respuesta?: string;
+  created_at: string;
+};
 export type Factura = {
   id: string;
   cliente_id: string;
@@ -30,6 +74,15 @@ export type Factura = {
   email?: string;
   telefono?: string;
   pagado?: number;
+  saldo?: number;
+};
+
+export type ClienteDetalle = Cliente & {
+  facturas_detalle: Factura[];
+  pagos: Pago[];
+  promesas: Promesa[];
+  logs: LogComunicacion[];
+  chatbot?: ChatbotMensaje[];
 };
 
 export type Metrics = {
@@ -37,10 +90,26 @@ export type Metrics = {
   total_promesa: number;
   total_cobrado: number;
   total_facturado: number;
+  saldo_abierto: number;
   facturas_total: number;
   facturas_pagadas: number;
   facturas_vencidas: number;
   tasa_recuperacion: number;
+};
+
+
+export type TemplateMensaje = {
+  id: string;
+  nombre: string;
+  canal: 'WHATSAPP' | 'EMAIL' | 'SMS' | 'LLAMADA';
+  contenido: string;
+  is_default: boolean;
+  created_at?: string;
+};
+export type AgingBucket = {
+  bucket: 'POR_VENCER' | '0_30' | '31_60' | '61_90' | '90_MAS';
+  facturas: number;
+  saldo: number;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';

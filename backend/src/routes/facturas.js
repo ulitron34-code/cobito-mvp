@@ -29,7 +29,8 @@ router.get('/', asyncHandler(async (req, res) => {
   const { estado, q } = req.query;
   const params = [req.user.userId];
   let query = `SELECT f.*, c.nombre AS cliente_nombre, c.rfc, c.email, c.telefono,
-      COALESCE((SELECT SUM(p.monto) FROM pagos p WHERE p.factura_id = f.id), 0)::float AS pagado
+      COALESCE((SELECT SUM(p.monto) FROM pagos p WHERE p.factura_id = f.id), 0)::float AS pagado,
+      GREATEST(f.monto - COALESCE((SELECT SUM(p.monto) FROM pagos p WHERE p.factura_id = f.id), 0), 0)::float AS saldo
     FROM facturas f
     JOIN clientes c ON f.cliente_id = c.id
     WHERE f.user_id = $1`;

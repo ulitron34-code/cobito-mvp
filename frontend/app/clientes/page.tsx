@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { FormEvent, useEffect, useState } from 'react';
 import { api, Cliente } from '@/utils/api';
 import { money } from '@/utils/format';
@@ -51,7 +52,7 @@ export default function ClientesPage() {
             <tbody>
               {clientes.map((cliente) => (
                 <tr key={cliente.id} className="border-b last:border-0">
-                  <td className="py-3 font-semibold">{cliente.nombre}</td>
+                  <td className="py-3 font-semibold"><Link className="text-ink hover:text-mint" href={`/clientes/${cliente.id}`}>{cliente.nombre}</Link></td>
                   <td>{cliente.rfc || '-'}</td>
                   <td>{cliente.email || cliente.telefono || '-'}</td>
                   <td>{cliente.facturas || 0}</td>

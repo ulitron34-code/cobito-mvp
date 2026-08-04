@@ -17,6 +17,7 @@ app.use('/api/clientes', require('./routes/clientes'));
 app.use('/api/facturas', require('./routes/facturas'));
 app.use('/api/cobranza', require('./routes/cobranza'));
 app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/webhooks', require('./routes/webhooks'));
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

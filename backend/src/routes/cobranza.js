@@ -4,7 +4,7 @@ const authMiddleware = require('../middleware/auth');
 const { validate } = require('../utils/validators');
 const asyncHandler = require('../utils/asyncHandler');
 const { httpError } = require('../utils/errors');
-const { construirMensaje } = require('../services/cobranza');
+const { construirMensaje, listarTemplates, resolverTemplate } = require('../services/cobranza');
 const { v4: uuidv4 } = require('uuid');
 
 const router = express.Router();
@@ -23,10 +23,46 @@ router.get('/calendario', asyncHandler(async (req, res) => {
 
   res.json(calendario);
 }));
+router.get('/templates', asyncHandler(async (req, res) => {
+  res.json(await listarTemplates(req.user.userId));
+}));
+
+router.post('/templates', validate('templateMensaje'), asyncHandler(async (req, res) => {
+  const template = await db.one(
+    `INSERT INTO templates_mensajes (id, user_id, nombre, canal, contenido, is_default)
+     VALUES ($1, $2, $3, $4, $5, false)
+     RETURNING id::text, nombre, canal, contenido, is_default, created_at`,
+    [uuidv4(), req.user.userId, req.body.nombre, req.body.canal, req.body.contenido]
+  );
+
+  res.status(201).json(template);
+}));
+
+router.get('/:facturaId/mensaje', asyncHandler(async (req, res) => {
+  const { facturaId } = req.params;
+  const canal = req.query.canal || 'WHATSAPP';
+  const templateId = req.query.templateId || null;
+
+  const factura = await db.oneOrNone(
+    `SELECT f.*, c.nombre, c.telefono, c.email,
+      COALESCE((SELECT SUM(p.monto) FROM pagos p WHERE p.factura_id = f.id), 0)::float AS pagado,
+      GREATEST(f.monto - COALESCE((SELECT SUM(p.monto) FROM pagos p WHERE p.factura_id = f.id), 0), 0)::float AS saldo
+     FROM facturas f
+     JOIN clientes c ON f.cliente_id = c.id
+     WHERE f.id = $1 AND f.user_id = $2`,
+    [facturaId, req.user.userId]
+  );
+
+  if (!factura) throw httpError(404, 'Factura no encontrada');
+  if (!['WHATSAPP', 'EMAIL', 'SMS', 'LLAMADA'].includes(canal)) throw httpError(400, 'Canal invalido');
+
+  const template = await resolverTemplate(req.user.userId, canal, templateId);
+  res.json({ mensaje: construirMensaje(factura, canal, template.contenido), template });
+}));
 
 router.post('/:facturaId/enviar', validate('enviarRecordatorio'), asyncHandler(async (req, res) => {
   const { facturaId } = req.params;
-  const { canal } = req.body;
+  const { canal, templateId } = req.body;
 
   const factura = await db.oneOrNone(
     `SELECT f.*, c.nombre, c.telefono, c.email
@@ -41,13 +77,15 @@ router.post('/:facturaId/enviar', validate('enviarRecordatorio'), asyncHandler(a
   const destinatario = canal === 'WHATSAPP' || canal === 'SMS' ? factura.telefono : factura.email;
   if (!destinatario && canal !== 'LLAMADA') throw httpError(400, `El cliente no tiene destinatario para ${canal}`);
 
-  const mensaje = construirMensaje(factura, canal);
+  const template = await resolverTemplate(req.user.userId, canal, templateId);
+  const mensaje = construirMensaje(factura, canal, template.contenido);
   const resultado = {
     status: 'simulado',
     canal,
     destinatario: destinatario || factura.telefono || factura.email || 'pendiente',
     provider: 'demo',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    templateId: template.id
   };
 
   const log = await db.one(

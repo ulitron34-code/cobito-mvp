@@ -1,6 +1,7 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import * as Papa from 'papaparse';
 import { api, Cliente, Factura } from '@/utils/api';
 import { money, shortDate } from '@/utils/format';
 
@@ -11,6 +12,22 @@ Grupo Textil MX,GTM030303CC3,admin@textilmx.mx,5553334455,F-1003,31200,2026-06-2
 Distribuidora Sur,DSU040404DD4,cuentas@sur.mx,5554445566,F-1004,155000,2026-05-28,2026-07-05,Pedido mayorista
 Consultoria Delta,CDE050505EE5,finanzas@delta.mx,5555556677,F-1005,18700,2026-07-01,2026-07-30,Servicios profesionales`;
 
+const requiredColumns = ['clienteNombre', 'monto', 'fechaEmision', 'fechaVencimiento'];
+
+type ImportFactura = {
+  clienteNombre: string;
+  rfc?: string;
+  email?: string;
+  telefono?: string;
+  folio?: string;
+  monto: number;
+  fechaEmision: string;
+  fechaVencimiento: string;
+  concepto?: string;
+};
+
+type RawRow = Record<string, string | undefined>;
+
 export default function FacturasPage() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [facturas, setFacturas] = useState<Factura[]>([]);
@@ -18,6 +35,8 @@ export default function FacturasPage() {
   const [form, setForm] = useState({ clienteId: '', folio: '', monto: '', fechaEmision: '', fechaVencimiento: '', concepto: '' });
   const [message, setMessage] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+
+  const preview = useMemo(() => analyzeCsv(csv), [csv]);
 
   async function load() {
     const [c, f] = await Promise.all([api<Cliente[]>('/clientes'), api<Factura[]>('/facturas')]);
@@ -39,9 +58,9 @@ export default function FacturasPage() {
   async function importCsv() {
     try {
       setIsImporting(true);
-      const rows = parseCsv(csv);
-      if (!rows.length) throw new Error('El CSV no tiene facturas para importar.');
-      const response = await api<{ message: string }>('/facturas/import/excel', { method: 'POST', body: JSON.stringify({ facturas: rows }) });
+      if (!preview.rows.length) throw new Error('No hay filas validas para importar.');
+      if (preview.errors.length) throw new Error('Corrige los errores del CSV antes de importar.');
+      const response = await api<{ message: string }>('/facturas/import/excel', { method: 'POST', body: JSON.stringify({ facturas: preview.rows }) });
       setMessage(response.message);
       await load();
     } catch (error) {
@@ -54,6 +73,17 @@ export default function FacturasPage() {
   function loadDemo() {
     setCsv(sampleCsv);
     setMessage('Cartera demo lista. Puedes importarla o editarla antes.');
+  }
+
+  function readFile(file?: File) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCsv(String(reader.result || ''));
+      setMessage(`Archivo ${file.name} cargado para revision.`);
+    };
+    reader.onerror = () => setMessage('No se pudo leer el archivo.');
+    reader.readAsText(file);
   }
 
   return (
@@ -78,15 +108,17 @@ export default function FacturasPage() {
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-black">Importar CSV</h2>
-          <p className="mt-1 text-sm text-slate-500">Pega columnas como el ejemplo o carga la demo.</p>
+          <p className="mt-1 text-sm text-slate-500">Carga un archivo o pega columnas como el ejemplo.</p>
           <div className="mt-4 grid grid-cols-2 gap-2">
             <button className="btn-secondary" type="button" onClick={loadDemo}>Cargar demo</button>
-            <button className="btn-primary" type="button" onClick={importCsv} disabled={isImporting}>
+            <button className="btn-primary" type="button" onClick={importCsv} disabled={isImporting || !preview.rows.length || Boolean(preview.errors.length)}>
               {isImporting ? 'Importando...' : 'Importar cartera'}
             </button>
           </div>
+          <input className="field mt-3" type="file" accept=".csv,text/csv" onChange={(event) => readFile(event.target.files?.[0])} />
           <textarea className="field mt-4 min-h-56 font-mono text-xs" value={csv} onChange={(e) => setCsv(e.target.value)} />
           {message ? <p className="mt-3 text-sm font-semibold text-mint">{message}</p> : null}
+          <ImportPreview rows={preview.rows} errors={preview.errors} />
         </section>
       </aside>
 
@@ -94,7 +126,7 @@ export default function FacturasPage() {
         <h2 className="text-lg font-black">Facturas activas</h2>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="border-b text-xs uppercase text-slate-500"><tr><th className="py-3">Cliente</th><th>Folio</th><th>Vencimiento</th><th>Estado</th><th className="text-right">Monto</th></tr></thead>
+            <thead className="border-b text-xs uppercase text-slate-500"><tr><th className="py-3">Cliente</th><th>Folio</th><th>Vencimiento</th><th>Estado</th><th className="text-right">Saldo</th></tr></thead>
             <tbody>
               {facturas.map((factura) => (
                 <tr key={factura.id} className="border-b last:border-0">
@@ -102,7 +134,7 @@ export default function FacturasPage() {
                   <td>{factura.folio || factura.id.slice(0, 8)}</td>
                   <td>{shortDate(factura.fecha_vencimiento)}</td>
                   <td><span className="rounded bg-slate-100 px-2 py-1 text-xs font-bold">{factura.estado}</span></td>
-                  <td className="text-right font-black">{money(factura.monto)}</td>
+                  <td className="text-right font-black">{money(factura.saldo ?? factura.monto)}</td>
                 </tr>
               ))}
               {!facturas.length ? <tr><td className="py-6 text-slate-500" colSpan={5}>Sin facturas todavia.</td></tr> : null}
@@ -114,15 +146,91 @@ export default function FacturasPage() {
   );
 }
 
-function parseCsv(raw: string) {
-  const [headerLine, ...lines] = raw.trim().split(/\r?\n/);
-  if (!headerLine) return [];
-  const headers = headerLine.split(',').map((h) => h.trim());
-  return lines.filter(Boolean).map((line) => {
-    const values = line.split(',').map((v) => v.trim());
-    const row: Record<string, string | number> = {};
-    headers.forEach((header, index) => { row[header] = header === 'monto' ? Number(values[index]) : values[index]; });
-    return row;
-  });
+function ImportPreview({ rows, errors }: { rows: ImportFactura[]; errors: string[] }) {
+  return (
+    <div className="mt-4 rounded border border-slate-200 p-3 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-black">Vista previa</p>
+        <span className={errors.length ? 'font-bold text-coral' : 'font-bold text-mint'}>{rows.length} filas validas</span>
+      </div>
+      {errors.length ? (
+        <div className="mt-3 space-y-1 text-xs font-semibold text-coral">
+          {errors.slice(0, 6).map((error) => <p key={error}>{error}</p>)}
+          {errors.length > 6 ? <p>+{errors.length - 6} errores mas</p> : null}
+        </div>
+      ) : null}
+      {rows.length ? (
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="border-b uppercase text-slate-500"><tr><th className="py-2">Cliente</th><th>Folio</th><th>Vence</th><th className="text-right">Monto</th></tr></thead>
+            <tbody>
+              {rows.slice(0, 5).map((row, index) => (
+                <tr key={`${row.folio || row.clienteNombre}-${index}`} className="border-b last:border-0">
+                  <td className="py-2 font-semibold">{row.clienteNombre}</td>
+                  <td>{row.folio || '-'}</td>
+                  <td>{shortDate(row.fechaVencimiento)}</td>
+                  <td className="text-right font-black">{money(row.monto)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : errors.length ? null : <p className="mt-3 text-xs text-slate-500">Pega o carga un CSV para revisar la cartera.</p>}
+    </div>
+  );
 }
 
+function analyzeCsv(raw: string) {
+  const errors: string[] = [];
+  const trimmed = raw.trim();
+  if (!trimmed) return { rows: [] as ImportFactura[], errors };
+
+  const result = Papa.parse<RawRow>(trimmed, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (header: string) => header.trim(),
+    transform: (value: string) => value.trim()
+  });
+
+  const fields = result.meta.fields || [];
+  for (const column of requiredColumns) {
+    if (!fields.includes(column)) errors.push(`Falta columna requerida: ${column}`);
+  }
+
+  for (const parseError of result.errors) {
+    errors.push(`CSV fila ${parseError.row ?? '-'}: ${parseError.message}`);
+  }
+
+  const rows: ImportFactura[] = [];
+  result.data.forEach((row, index) => {
+    if (!Object.values(row).some(Boolean)) return;
+    const line = index + 2;
+    const monto = Number(row.monto);
+    if (!row.clienteNombre) errors.push(`Fila ${line}: falta clienteNombre`);
+    if (!Number.isFinite(monto) || monto <= 0) errors.push(`Fila ${line}: monto invalido`);
+    if (!isIsoDate(row.fechaEmision)) errors.push(`Fila ${line}: fechaEmision invalida`);
+    if (!isIsoDate(row.fechaVencimiento)) errors.push(`Fila ${line}: fechaVencimiento invalida`);
+
+    if (row.clienteNombre && Number.isFinite(monto) && monto > 0 && isIsoDate(row.fechaEmision) && isIsoDate(row.fechaVencimiento)) {
+      rows.push({
+        clienteNombre: row.clienteNombre,
+        rfc: row.rfc || '',
+        email: row.email || '',
+        telefono: row.telefono || '',
+        folio: row.folio || '',
+        monto,
+        fechaEmision: row.fechaEmision || '',
+        fechaVencimiento: row.fechaVencimiento || '',
+        concepto: row.concepto || ''
+      });
+    }
+  });
+
+  return { rows, errors };
+}
+
+function isIsoDate(value?: string) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00`);
+  return !Number.isNaN(date.getTime());
+}
